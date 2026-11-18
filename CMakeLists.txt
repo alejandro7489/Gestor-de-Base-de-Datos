@@ -9,6 +9,7 @@ add_executable(spotify_dbms
     src/ListaLRU.cpp
     src/BufferPool.cpp
     src/GestorMusical.cpp
+    src/InterfazConsola.cpp
 )
 
 target_include_directories(spotify_dbms PRIVATE include)
