@@ -4,23 +4,33 @@
 #include <cstddef>
 #include <optional>
 #include <string>
+#include <vector>
 
 using namespace std;
 
-// Contrato futuro: clave -> posicion. Cada instancia tendra un unico uso:
-// track_id -> ID de pagina, o ID de pagina como texto -> indice del frame.
+// Cada clave completa se asocia con una posición, por ejemplo, el ID de una página.
 class TablaHash {
 public:
     explicit TablaHash(size_t capacidad = 101);
+    TablaHash(const TablaHash& otra);
+    TablaHash& operator=(const TablaHash& otra);
+    ~TablaHash();
+
     size_t capacidad() const;
 
-    // Pendientes: funcion hash, almacenamiento de entradas y manejo de colisiones.
     void insertar(const string& clave, size_t posicion);
     optional<size_t> buscar(const string& clave) const;
     bool eliminar(const string& clave);
 
 private:
-    size_t capacidad_;
+    struct Nodo {
+        string clave;
+        size_t posicion;
+        Nodo* siguiente;
+    };
+
+    size_t indiceBucket(const string& clave) const;
+    vector<Nodo*> buckets_;
 };
 
 #endif
