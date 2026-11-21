@@ -10,6 +10,10 @@ struct Frame {
     Pagina pagina;
     bool ocupado = false;
 
+    size_t pinCount = 0;
+
+    bool dirtyBit = false;
+
     explicit Frame(size_t tamanoPagina = TAMANO_PAGINA_PREDETERMINADO)
         : pagina(0, tamanoPagina) {}
 };
