@@ -5,6 +5,7 @@ add_executable(spotify_dbms
     src/main.cpp
     src/LectorCSV.cpp
     src/Almacenamiento.cpp
+    src/Pagina.cpp
     src/TablaHash.cpp
     src/ListaLRU.cpp
     src/BufferPool.cpp

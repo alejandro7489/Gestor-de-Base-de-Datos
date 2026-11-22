@@ -19,7 +19,7 @@ public:
     bool estaAbierto() const;
     const string& ruta() const;
 
-    // Pendiente: leer un registro por llamada; nullopt significara fin del archivo.
+    // Devuelve una canción por llamada; nullopt indica fin del archivo.
     optional<Cancion> leerSiguiente();
 
     inline static constexpr array<string_view, 16> COLUMNAS_ESPERADAS = {
@@ -32,6 +32,8 @@ public:
 private:
     string ruta_;
     ifstream archivo_;
+    size_t numeroRegistro_ = 0;
+    bool encabezadoLeido_ = false;
 };
 
 #endif

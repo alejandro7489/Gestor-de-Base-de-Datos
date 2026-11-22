@@ -1,6 +1,8 @@
 #ifndef SPOTIFY_DBMS_PAGINA_H
 #define SPOTIFY_DBMS_PAGINA_H
 
+#include "Cancion.h"
+
 #include <cstddef>
 #include <stdexcept>
 #include <vector>
@@ -21,6 +23,9 @@ struct Pagina {
             throw invalid_argument("El tamano de pagina debe ser mayor que cero.");
         }
     }
+
+    bool agregarCancion(const Cancion& cancion);
+    vector<Cancion> leerCanciones() const;
 };
 
 #endif

@@ -2,6 +2,24 @@
 
 Ejecuta los comandos desde la raíz de `spotify_dbms`. Cada prueba tiene su propio `main`.
 
+## Storage: CSV, páginas y archivo binario
+
+Esta prueba crea entradas y binarios pequeños en una carpeta temporal del sistema; no
+usa ni altera los datasets locales.
+
+```powershell
+cl /nologo /std:c++17 /EHsc /W4 /utf-8 /Iinclude /Fobuild\ /Febuild\storage.exe tests/storage.cpp src/LectorCSV.cpp src/Pagina.cpp src/Almacenamiento.cpp
+.\build\storage.exe
+```
+
+Con GCC:
+
+```sh
+mkdir -p build
+g++ -std=c++17 -Wall -Wextra -Wpedantic -Iinclude tests/storage.cpp src/LectorCSV.cpp src/Pagina.cpp src/Almacenamiento.cpp -o build/storage
+./build/storage
+```
+
 ## Tabla Hash
 
 En PowerShell para desarrolladores de Visual Studio:
