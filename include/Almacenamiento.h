@@ -16,13 +16,14 @@ public:
 
     // Solo abre archivos existentes. No crea el archivo binario.
     bool abrir();
+    bool crear();
     void cerrar();
     bool estaAbierto() const;
     const string& ruta() const;
     size_t tamanoPagina() const;
     uintmax_t tamanoArchivo() const;
+    size_t cantidadPaginas() const;
 
-    // Pendientes: acceso paginado y validacion del formato binario.
     Pagina leerPagina(IdPagina id);
     void escribirPagina(const Pagina& pagina);
 
