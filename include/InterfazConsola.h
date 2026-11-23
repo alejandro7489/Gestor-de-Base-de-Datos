@@ -1,13 +1,11 @@
 #ifndef INTERFAZ_CONSOLA_H
 #define INTERFAZ_CONSOLA_H
 
+#include "GestorMusical.h"
+
+#include <optional>
 #include <string>
 
-// Interfaz de consola PROVISIONAL del Spotify Database Manager.
-//
-// Todas las pantallas muestran datos de ejemplo: todavía no se conectan con
-// GestorMusical, BufferPool ni LectorCSV. Cuando cada componente esté listo,
-// basta con reemplazar el contenido de la pantalla correspondiente.
 class InterfazConsola {
 public:
     // Muestra el menú principal y atiende al usuario hasta que elija salir.
@@ -28,12 +26,23 @@ private:
     std::string leerOpcion(const std::string& contexto) const;
 
     // --- Pantallas (una por opción del menú) ---
-    void pantallaBuscarMusica() const;
+    void pantallaBuscarMusica();
     void pantallaTop() const;
     void pantallaExplorar() const;
-    void pantallaOperaciones() const;
+    void pantallaOperaciones();
     void pantallaBufferPool() const;
     void pantallaEstadisticas() const;
+
+    bool reabrirBase();
+    void importarBase();
+    void leerResumenBase();
+
+    std::optional<GestorMusical> gestor_;
+    std::size_t canciones_ = 0;
+    std::size_t paginas_ = 0;
+    std::optional<std::string> primerId_;
+    std::size_t consultas_ = 0;
+    std::size_t idsAusentes_ = 0;
 };
 
 #endif // INTERFAZ_CONSOLA_H

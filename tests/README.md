@@ -8,6 +8,7 @@ Esta prueba crea entradas y binarios pequeños en una carpeta temporal del siste
 usa ni altera los datasets locales.
 
 ```powershell
+New-Item -ItemType Directory -Force build | Out-Null
 cl /nologo /std:c++17 /EHsc /W4 /utf-8 /Iinclude /Fobuild\ /Febuild\storage.exe tests/storage.cpp src/LectorCSV.cpp src/Pagina.cpp src/Almacenamiento.cpp
 .\build\storage.exe
 ```
@@ -56,25 +57,37 @@ cl /nologo /std:c++17 /EHsc /W4 /WX /utf-8 /O2 /Iinclude /Fobuild\ /Febuild\hash
 
 ## Integración con el CSV real
 
-La prueba importa a un binario temporal con páginas de 2048 bytes. Cierra el primer
-gestor y crea otro con una ruta CSV inexistente para comprobar que recupera la canción
-desde el binario. Compara el primer registro del CSV con la consulta y exige que
-los contadores pasen por `(0, 0)`, `(0, 1)`, `(1, 1)` y `(1, 1)` en orden
-`(hits, misses)`. El último par corresponde a la consulta de un ID inexistente.
+La prueba importa las 1000 canciones a un binario temporal con páginas de 4096
+bytes y un Buffer Pool de dos frames. Cierra el primer gestor y abre el binario
+con otro gestor cuya ruta CSV no existe. Verifica la cantidad de registros y
+compara los 16 campos de cada canción, incluidos los opcionales, tanto en las
+páginas como en las consultas por Hash. También prueba IDs duplicados, el
+rechazo de registros demasiado grandes y que una importación nueva preserve
+un binario existente.
 
 ```powershell
 New-Item -ItemType Directory -Force build | Out-Null
-cl /nologo /std:c++17 /EHsc /W4 /utf-8 /Iinclude /Fobuild\ /Febuild\monday.exe tests/monday.cpp src/GestorMusical.cpp src/TablaHash.cpp src/LectorCSV.cpp src/Almacenamiento.cpp src/BufferPool.cpp src/ListaLRU.cpp
+cl /nologo /std:c++17 /EHsc /W4 /utf-8 /Iinclude /Fobuild\ /Febuild\monday.exe tests/monday.cpp src/GestorMusical.cpp src/TablaHash.cpp src/LectorCSV.cpp src/Almacenamiento.cpp src/Pagina.cpp src/BufferPool.cpp src/ListaLRU.cpp
 .\build\monday.exe ..\datasets\spotify_sample_1000.csv
 ```
 
-Si Storage mueve la implementación de `Pagina` a un `.cpp`, inclúyelo al compilar.
-La prueba necesita la importación y búsqueda de `GestorMusical`, la lectura CSV,
-la serialización y el acceso paginado de Storage, y la carga y liberación de páginas
-del Buffer Pool. En el scaffold se detiene al iniciar la importación.
+Con GCC:
 
-Para verificar también el acceso a disco de forma independiente, queda pendiente
-comprobar el contador de lecturas físicas si el Buffer Pool lo expone. Con el
-contrato actual también se puede hacer una prueba directa: cargar y liberar una
-página real, cerrar el almacenamiento y volver a pedir la página residente.
-La segunda solicitud debe ser un hit con el archivo cerrado.
+```sh
+mkdir -p build
+g++ -std=c++17 -Wall -Wextra -Wpedantic -Iinclude tests/monday.cpp src/GestorMusical.cpp src/TablaHash.cpp src/LectorCSV.cpp src/Almacenamiento.cpp src/Pagina.cpp src/BufferPool.cpp src/ListaLRU.cpp -o build/monday
+./build/monday ../datasets/spotify_sample_1000.csv
+```
+
+La consulta inicial produce un MISS y una lectura de página. La repetición
+produce un HIT y el ID inexistente deja intactos los contadores. En la prueba
+independiente con dos frames, la secuencia `0,0,1,2,0` produce un HIT y cuatro
+MISS. También se verifica que los pines impidan el reemplazo y que pedir una
+página residente con el archivo cerrado produzca un HIT.
+En una prueba con un solo frame, se comprueba que un error de decodificación
+libere el pin para que la siguiente página pueda ocupar el frame.
+
+`lecturasDisco` cuenta llamadas exitosas del Buffer Pool a
+`Almacenamiento::leerPagina`. Las lecturas directas de reconstrucción quedan
+fuera de ese contador. La caché del sistema operativo puede responder a una
+lectura, por lo que esta métrica no mide accesos físicos al dispositivo.

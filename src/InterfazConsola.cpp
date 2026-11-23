@@ -1,18 +1,20 @@
-#include "InterfazConsola.h"
-
-#include <cmath>
-#include <cstdio>
-#include <iostream>
-#include <string>
-#include <vector>
-
 #ifdef _WIN32
 #define NOMINMAX
+#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #ifndef ENABLE_VIRTUAL_TERMINAL_PROCESSING
 #define ENABLE_VIRTUAL_TERMINAL_PROCESSING 0x0004
 #endif
 #endif
+
+#include "InterfazConsola.h"
+
+#include <cmath>
+#include <cstdio>
+#include <iostream>
+#include <stdexcept>
+#include <string>
+#include <vector>
 
 using namespace std;
 
@@ -29,11 +31,9 @@ const string GRIS     = "\033[90m";
 const string AMARILLO = "\033[33m";
 const string ROJO     = "\033[31m";
 
-// Cifras ILUSTRATIVAS de la pantalla principal (no son resultados reales).
-const string DEMO_TRACKS  = "897,432";
-const string DEMO_PAGINAS = "31,204";
-const string DEMO_BUFFER  = "4 MiB";
-const string DEMO_PAGINA  = "4 KiB";
+const string RUTA_CSV = "../datasets/spotify_sample_1000.csv";
+const string RUTA_BINARIO = "data/canciones-demo.bin";
+constexpr size_t CANTIDAD_FRAMES = 2;
 
 const int ANCHO_PANTALLA = 62;
 
@@ -74,10 +74,6 @@ string indicador(const string& contexto) {
     return "  " + VERDE + "spotify-db" + ruta + " > " + RESET;
 }
 
-string dosDigitos(int n) {
-    return (n < 10 ? "0" : "") + to_string(n);
-}
-
 // Barra de progreso: ████████░░░░
 string barra(double porcentaje, int ancho) {
     int llenos = static_cast<int>(round(porcentaje / 100.0 * ancho));
@@ -116,6 +112,12 @@ void imprimirTabla(const vector<string>& cabecera,
 // ---------------------------------------------------------------------------
 void InterfazConsola::ejecutar() {
     prepararConsola();
+    try {
+        reabrirBase();
+    } catch (const exception& error) {
+        cout << "  Error al abrir el binario: " << error.what() << '\n';
+        pausar();
+    }
 
     bool salir = false;
     while (!salir) {
@@ -145,6 +147,7 @@ void InterfazConsola::ejecutar() {
 void InterfazConsola::prepararConsola() const {
 #ifdef _WIN32
     // UTF-8 y secuencias ANSI (colores) en la consola de Windows.
+    SetConsoleCP(CP_UTF8);
     SetConsoleOutputCP(CP_UTF8);
     HANDLE salida = GetStdHandle(STD_OUTPUT_HANDLE);
     DWORD modo = 0;
@@ -175,9 +178,15 @@ void InterfazConsola::mostrarBanner() const {
 
 void InterfazConsola::mostrarEstado() const {
     vector<string> lineas;
-    lineas.push_back(VERDE + NEGRITA + "● BASE DE DATOS EN LÍNEA" + RESET);
-    lineas.push_back("Canciones: " + DEMO_TRACKS + " · Páginas: " + DEMO_PAGINAS);
-    lineas.push_back("Buffer: " + DEMO_BUFFER + " · Tamaño de página: " + DEMO_PAGINA);
+    if (gestor_) {
+        lineas.push_back(VERDE + NEGRITA + "● BASE DE DATOS EN LÍNEA" + RESET);
+        lineas.push_back("Canciones: " + to_string(canciones_) + " · Páginas: " + to_string(paginas_));
+    } else {
+        lineas.push_back(AMARILLO + "● BASE DE DATOS SIN ABRIR" + RESET);
+        lineas.push_back("Importa el CSV desde Operaciones [4].");
+    }
+    lineas.push_back("Buffer: " + to_string(CANTIDAD_FRAMES) + " frames · Página: "
+                     + to_string(TAMANO_PAGINA_PREDETERMINADO) + " bytes");
     imprimirCaja(lineas, 46);
 }
 
@@ -203,8 +212,7 @@ void InterfazConsola::mostrarEncabezado(const string& titulo) const {
     limpiarPantalla();
     cout << "\n  " << VERDE << NEGRITA << "SPOTIFY DATABASE MANAGER" << RESET
          << GRIS << "  ›  " << RESET << NEGRITA << titulo << RESET << "\n";
-    cout << GRIS << repetir("─", ANCHO_PANTALLA) << RESET << "\n";
-    cout << "  " << AMARILLO << "Pantalla provisional · los datos mostrados son de ejemplo" << RESET << "\n\n";
+    cout << GRIS << repetir("─", ANCHO_PANTALLA) << RESET << "\n\n";
 }
 
 void InterfazConsola::mostrarPendiente(const string& detalle) const {
@@ -237,7 +245,7 @@ string InterfazConsola::leerOpcion(const string& contexto) const {
 // ---------------------------------------------------------------------------
 // [1] Buscar música
 // ---------------------------------------------------------------------------
-void InterfazConsola::pantallaBuscarMusica() const {
+void InterfazConsola::pantallaBuscarMusica() {
     while (true) {
         mostrarEncabezado("Buscar música");
         cout << "  " << VERDE << "[1]" << RESET << "  Por ID de canción (track_id)\n"
@@ -246,152 +254,161 @@ void InterfazConsola::pantallaBuscarMusica() const {
              << "  " << VERDE << "[4]" << RESET << "  Filtrar por año o género\n\n"
              << "  " << VERDE << "[0]" << RESET << "  Volver\n\n";
 
-        string opcion = leerOpcion("buscar");
+        const string opcion = leerOpcion("buscar");
         if (opcion == "0") return;
-        if (opcion.size() != 1 || opcion[0] < '1' || opcion[0] > '4') {
+        if (opcion == "2" || opcion == "3" || opcion == "4") {
+            mostrarPendiente("búsquedas por artista y álbum, y filtros.");
+        } else if (opcion != "1") {
             mostrarOpcionInvalida();
             continue;
+        } else if (!gestor_) {
+            cout << "\n  Importa el CSV desde Operaciones [4].\n";
+        } else {
+            if (primerId_) {
+                cout << "\n  ID para probar: " << *primerId_ << " (presiona Enter para usarlo)\n";
+            }
+            string id = recortar(leerLinea("  track_id: "));
+            if (!cin) return;
+            if (id.empty() && primerId_) id = *primerId_;
+            if (id.empty()) {
+                cout << "\n  Escribe un track_id para buscar.\n";
+            } else {
+                try {
+                    const auto antes = gestor_->estadisticasBuffer();
+                    const auto cancion = gestor_->buscarPorId(id);
+                    const auto despues = gestor_->estadisticasBuffer();
+                    ++consultas_;
+                    if (cancion) {
+                        cout << "\n  " << NEGRITA << cancion->name << RESET << '\n'
+                             << "  Artista: " << cancion->track_artists << '\n'
+                             << "  Álbum:   " << cancion->album_name << '\n'
+                             << "  ID:      " << cancion->track_id << '\n'
+                             << "  Buffer:  " << (despues.hits > antes.hits ? "HIT" : "MISS")
+                             << " · Lecturas de página: "
+                             << despues.lecturasDisco - antes.lecturasDisco << '\n';
+                    } else {
+                        ++idsAusentes_;
+                        cout << "\n  ID inexistente. El Buffer Pool conserva sus contadores.\n";
+                    }
+                } catch (const exception& error) {
+                    cout << "\n  Error en la consulta: " << error.what() << '\n';
+                }
+            }
         }
-
-        string criterio = recortar(leerLinea("\n  Texto a buscar: "));
-        cout << "\n  Resultados de ejemplo para \"" << criterio << "\":\n\n";
-
-        vector<vector<string>> filas;
-        for (int i = 1; i <= 3; i++) {
-            vector<string> fila;
-            fila.push_back("Track de ejemplo " + dosDigitos(i));
-            fila.push_back("Artista de ejemplo " + string(1, static_cast<char>('A' + i - 1)));
-            fila.push_back(to_string(90 - i * 3));
-            filas.push_back(fila);
-        }
-        imprimirTabla({"Nombre", "Artista", "Popularidad"}, {24, 20, 12}, filas);
-
-        mostrarPendiente("la búsqueda real se conectará con GestorMusical / LectorCSV.");
         pausar();
     }
 }
 
-// ---------------------------------------------------------------------------
-// [2] Top de popularidad
-// ---------------------------------------------------------------------------
 void InterfazConsola::pantallaTop() const {
-    while (true) {
-        mostrarEncabezado("Top de popularidad");
-        cout << "  " << VERDE << "[1]" << RESET << "  Top global\n"
-             << "  " << VERDE << "[2]" << RESET << "  Top por género\n"
-             << "  " << VERDE << "[3]" << RESET << "  Top por año\n\n"
-             << "  " << VERDE << "[0]" << RESET << "  Volver\n\n";
-
-        string opcion = leerOpcion("top");
-        if (opcion == "0") return;
-        if (opcion != "1" && opcion != "2" && opcion != "3") {
-            mostrarOpcionInvalida();
-            continue;
-        }
-
-        string titulo = opcion == "1" ? "Top global"
-                      : opcion == "2" ? "Top por género"
-                                      : "Top por año";
-        mostrarEncabezado(titulo);
-
-        vector<vector<string>> filas;
-        for (int i = 0; i < 10; i++) {
-            vector<string> fila;
-            fila.push_back("#" + to_string(i + 1));
-            fila.push_back("Track de ejemplo " + dosDigitos(i + 1));
-            fila.push_back("Artista de ejemplo " + string(1, static_cast<char>('A' + i)));
-            fila.push_back(to_string(98 - i));
-            filas.push_back(fila);
-        }
-        imprimirTabla({"Pos.", "Nombre", "Artista", "Popularidad"}, {4, 20, 18, 12}, filas);
-
-        mostrarPendiente("el ranking real se calculará con un Heap (fase posterior).");
-        pausar();
-    }
+    mostrarEncabezado("Top de popularidad");
+    mostrarPendiente("ranking de popularidad.");
+    pausar();
 }
 
-// ---------------------------------------------------------------------------
-// [3] Explorar biblioteca
-// ---------------------------------------------------------------------------
 void InterfazConsola::pantallaExplorar() const {
-    while (true) {
-        mostrarEncabezado("Explorar biblioteca");
-        cout << "  " << VERDE << "[1]" << RESET << "  Artistas\n"
-             << "  " << VERDE << "[2]" << RESET << "  Álbumes\n"
-             << "  " << VERDE << "[3]" << RESET << "  Géneros\n"
-             << "  " << VERDE << "[4]" << RESET << "  Años de lanzamiento\n\n"
-             << "  " << VERDE << "[0]" << RESET << "  Volver\n\n";
-
-        string opcion = leerOpcion("explorar");
-        if (opcion == "0") return;
-        if (opcion.size() != 1 || opcion[0] < '1' || opcion[0] > '4') {
-            mostrarOpcionInvalida();
-            continue;
-        }
-
-        string titulo, prefijo;
-        switch (opcion[0]) {
-            case '1': titulo = "Artistas";            prefijo = "Artista de ejemplo "; break;
-            case '2': titulo = "Álbumes";             prefijo = "Álbum de ejemplo ";   break;
-            case '3': titulo = "Géneros";             prefijo = "Género de ejemplo ";  break;
-            default:  titulo = "Años de lanzamiento"; prefijo = "";                    break;
-        }
-        mostrarEncabezado("Explorar · " + titulo);
-
-        vector<vector<string>> filas;
-        for (int i = 0; i < 6; i++) {
-            vector<string> fila;
-            if (opcion[0] == '4') fila.push_back(to_string(2024 - i));
-            else                  fila.push_back(prefijo + string(1, static_cast<char>('A' + i)));
-            fila.push_back(to_string(1200 - i * 175));
-            filas.push_back(fila);
-        }
-        imprimirTabla({titulo, "Canciones"}, {28, 12}, filas);
-
-        mostrarPendiente("la exploración real dependerá de los índices (hash / AVL).");
-        pausar();
-    }
+    mostrarEncabezado("Explorar biblioteca");
+    mostrarPendiente("exploración por artista, álbum, género y año.");
+    pausar();
 }
 
 // ---------------------------------------------------------------------------
 // [4] Operaciones de base de datos
 // ---------------------------------------------------------------------------
-void InterfazConsola::pantallaOperaciones() const {
+void InterfazConsola::pantallaOperaciones() {
     while (true) {
         mostrarEncabezado("Operaciones de base de datos");
         cout << "  " << VERDE << "[1]" << RESET << "  Insertar canción\n"
              << "  " << VERDE << "[2]" << RESET << "  Actualizar canción\n"
              << "  " << VERDE << "[3]" << RESET << "  Eliminar canción\n"
-             << "  " << VERDE << "[4]" << RESET << "  Importar CSV\n\n"
+             << "  " << VERDE << "[4]" << RESET << "  Importar CSV\n"
+             << "  " << VERDE << "[5]" << RESET << "  Reabrir binario y enfriar el buffer\n\n"
              << "  " << VERDE << "[0]" << RESET << "  Volver\n\n";
 
-        string opcion = leerOpcion("ops");
+        const string opcion = leerOpcion("ops");
         if (opcion == "0") return;
 
-        if (opcion == "1") {
-            leerLinea("\n  track_id : ");
-            leerLinea("  name     : ");
-            leerLinea("  artista  : ");
-            mostrarPendiente("la inserción real requiere almacenamiento paginado e índice hash.");
-            cout << "  " << GRIS << "(No se guardó ningún dato.)" << RESET << "\n";
-        } else if (opcion == "2") {
-            leerLinea("\n  track_id a actualizar : ");
-            mostrarPendiente("la actualización real requiere almacenamiento paginado.");
-            cout << "  " << GRIS << "(No se modificó ningún dato.)" << RESET << "\n";
-        } else if (opcion == "3") {
-            leerLinea("\n  track_id a eliminar : ");
-            leerLinea("  ¿Confirmar eliminación? (s/n) : ");
-            mostrarPendiente("la eliminación real requiere almacenamiento paginado.");
-            cout << "  " << GRIS << "(No se eliminó ningún dato.)" << RESET << "\n";
-        } else if (opcion == "4") {
-            cout << "\n  Origen  : ../spotify_reduced.csv\n"
-                 << "  Destino : data/canciones.bin\n";
-            mostrarPendiente("la importación necesita el parser incremental y el formato binario.");
-        } else {
-            mostrarOpcionInvalida();
-            continue;
+        try {
+            if (opcion == "1" || opcion == "2" || opcion == "3") {
+                mostrarPendiente("inserción, actualización y eliminación de canciones.");
+            } else if (opcion == "4") {
+                importarBase();
+            } else if (opcion == "5") {
+                if (reabrirBase()) {
+                    cout << "\n  Binario reabierto. Índice Hash reconstruido y buffer frío.\n";
+                } else {
+                    cout << "\n  Importa el CSV primero para crear el binario.\n";
+                }
+            } else {
+                mostrarOpcionInvalida();
+                continue;
+            }
+        } catch (const exception& error) {
+            cout << "\n  Error: " << error.what() << '\n';
         }
         pausar();
+    }
+}
+
+bool InterfazConsola::reabrirBase() {
+    if (gestor_) {
+        if (!gestor_->abrirAlmacenamiento()) return false;
+    } else {
+        gestor_.emplace("", RUTA_BINARIO, CANTIDAD_FRAMES);
+        try {
+            if (!gestor_->abrirAlmacenamiento()) {
+                gestor_.reset();
+                return false;
+            }
+            leerResumenBase();
+        } catch (...) {
+            gestor_.reset();
+            throw;
+        }
+    }
+    consultas_ = 0;
+    idsAusentes_ = 0;
+    return true;
+}
+
+void InterfazConsola::importarBase() {
+    if (gestor_) {
+        cout << "\n  El binario ya está abierto. Usa [5] para reabrirlo con el buffer frío.\n";
+        return;
+    }
+
+    cout << "\n  CSV predeterminado: " << RUTA_CSV << '\n'
+         << "  Destino binario:    " << RUTA_BINARIO << '\n';
+    string ruta = recortar(leerLinea("  Ruta CSV (Enter para usar la predeterminada): "));
+    if (!cin) return;
+    if (ruta.size() >= 2 && ruta.front() == '"' && ruta.back() == '"') {
+        ruta = ruta.substr(1, ruta.size() - 2);
+    }
+    if (ruta.empty()) ruta = RUTA_CSV;
+
+    gestor_.emplace(ruta, RUTA_BINARIO, CANTIDAD_FRAMES);
+    try {
+        gestor_->importarCSV();
+        leerResumenBase();
+    } catch (...) {
+        gestor_.reset();
+        throw;
+    }
+    cout << "\n  Importación lista. Canciones: " << canciones_ << " · Páginas: " << paginas_ << '\n';
+}
+
+void InterfazConsola::leerResumenBase() {
+    // Este recorrido cuenta registros y obtiene un ID de prueba sin tocar el Buffer Pool.
+    Almacenamiento disco(RUTA_BINARIO);
+    if (!disco.abrir()) {
+        throw runtime_error("No se pudo leer el resumen del binario.");
+    }
+    paginas_ = disco.cantidadPaginas();
+    canciones_ = 0;
+    primerId_.reset();
+    for (IdPagina id = 0; id < paginas_; ++id) {
+        const auto canciones = disco.leerPagina(id).leerCanciones();
+        canciones_ += canciones.size();
+        if (!primerId_ && !canciones.empty()) primerId_ = canciones.front().track_id;
     }
 }
 
@@ -400,38 +417,22 @@ void InterfazConsola::pantallaOperaciones() const {
 // ---------------------------------------------------------------------------
 void InterfazConsola::pantallaBufferPool() const {
     mostrarEncabezado("Monitor del Buffer Pool");
-
-    // Estado de ejemplo: ID de página por frame (-1 = frame libre).
-    const int paginas[16] = {140, 87, 2031, 15, 988, 4, 760, 312, 55, 1204,
-                             -1, -1, -1, -1, -1, -1};
-    int ocupados = 0;
-    for (int i = 0; i < 16; i++) if (paginas[i] >= 0) ocupados++;
-
-    cout << "  Capacidad : 16 frames · Tamaño de página: 4096 bytes\n";
-    cout << "  Ocupados  : " << ocupados << " / 16\n\n";
-
-    // Cuadrícula de 4x4 frames
-    for (int i = 0; i < 16; i++) {
-        bool ocupado = paginas[i] >= 0;
-        string celda = "[F" + dosDigitos(i) + ":" + (ocupado ? "P" + to_string(paginas[i]) : string("libre")) + "]";
-        if (i % 4 == 0) cout << "  ";
-        cout << (ocupado ? VERDE : GRIS) << rellenar(celda, 15) << RESET;
-        if (i % 4 == 3) cout << "\n";
+    cout << "  Capacidad: " << CANTIDAD_FRAMES << " frames · Tamaño de página: "
+         << TAMANO_PAGINA_PREDETERMINADO << " bytes\n";
+    if (gestor_) {
+        const auto stats = gestor_->estadisticasBuffer();
+        const size_t accesos = stats.hits + stats.misses;
+        cout << "  HIT: " << stats.hits << " · MISS: " << stats.misses
+             << " · Lecturas de página: " << stats.lecturasDisco << '\n';
+        if (accesos > 0) {
+            const double tasa = 100.0 * stats.hits / accesos;
+            char tasaTexto[16];
+            snprintf(tasaTexto, sizeof(tasaTexto), "%.1f", tasa);
+            cout << "  Tasa de aciertos: " << barra(tasa, 20) << " " << tasaTexto << " %\n";
+        }
+    } else {
+        cout << "  Importa el CSV desde Operaciones [4].\n";
     }
-
-    // Hits y misses de ejemplo
-    const int aciertos = 1284, fallos = 216;
-    double tasa = 100.0 * aciertos / (aciertos + fallos);
-    char tasaTexto[16];
-    snprintf(tasaTexto, sizeof(tasaTexto), "%.1f", tasa);
-
-    cout << "\n  Aciertos (hits)  : " << aciertos << "\n";
-    cout << "  Fallos (misses)  : " << fallos << "\n";
-    cout << "  Tasa de aciertos : " << barra(tasa, 20) << " " << tasaTexto << " %\n\n";
-    cout << "  Orden LRU (más reciente → menos reciente):\n";
-    cout << "  " << GRIS << "P140 → P87 → P2031 → P15 → P988 → … → P1204" << RESET << "\n";
-
-    mostrarPendiente("estos valores se tomarán de BufferPool cuando implemente hits/misses y LRU.");
     pausar();
 }
 
@@ -440,15 +441,15 @@ void InterfazConsola::pantallaBufferPool() const {
 // ---------------------------------------------------------------------------
 void InterfazConsola::pantallaEstadisticas() const {
     mostrarEncabezado("Estadísticas de rendimiento");
-
-    vector<vector<string>> filas;
-    filas.push_back({"Búsqueda por ID (hash)",        "0.42 ms",   "1,000"});
-    filas.push_back({"Búsqueda secuencial (CSV)",     "1,840 ms",  "1,000"});
-    filas.push_back({"Lectura de página · hit",       "0.02 ms",   "1,000"});
-    filas.push_back({"Lectura de página · miss",      "3.10 ms",   "1,000"});
-    filas.push_back({"Inserción de registro",         "0.90 ms",   "1,000"});
-    imprimirTabla({"Operación", "Tiempo prom.", "Muestras"}, {28, 12, 10}, filas);
-
-    mostrarPendiente("las mediciones reales se registrarán cuando existan las operaciones.");
+    if (gestor_) {
+        imprimirTabla({"Consultas por ID", "IDs ausentes", "Lecturas de página"},
+                      {18, 14, 20},
+                      {{to_string(consultas_), to_string(idsAusentes_),
+                        to_string(gestor_->estadisticasBuffer().lecturasDisco)}});
+        cout << "\n  Lecturas = páginas cargadas por el Buffer Pool desde el archivo.\n"
+             << "  La reconstrucción del índice y el resumen se leen por separado.\n";
+    } else {
+        cout << "  Importa el CSV desde Operaciones [4].\n";
+    }
     pausar();
 }

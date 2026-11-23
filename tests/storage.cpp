@@ -18,20 +18,38 @@ struct Temporales {
 string encabezado(){ return "name,track_artists,album_name,album_release_date,duration_ms,genres,explicit,track_id,track_track_number,album_total_tracks,streams,artist_followers,artist_popularity,track_album_album,popularity,tempo\n"; }
 void probarCSV(const filesystem::path& dir){
     const auto ruta=dir/"entrada.csv";
-    { ofstream f(ruta,ios::binary); f<<"\xEF\xBB\xBF"<<encabezado()<<"\"Tema, uno\",Artista,Álbum,2024,123.0,,true,id-1,1.0,12,999,45,80,Álbum,90,123.5\n"<<"\"Nombre\ncon línea\",A,B,2020,,,,id-2,,,,,,, ,\n"; }
+    { ofstream f(ruta,ios::binary); f<<"\xEF\xBB\xBF"<<encabezado()<<"\"Tema, uno\",Artista,Álbum,2024,123.0,,true,id-1,1.0,12,999,45,80,Álbum,90,123.5\n"<<"\"Nombre\ncon línea\",A,B,2020,,,,id-2,,,,,,,,\n"; }
     LectorCSV lector(ruta.string()); comprobar(lector.abrir(),"No abrió CSV.");
     const auto a=lector.leerSiguiente(); comprobar(a && a->name=="Tema, uno" && a->duration_ms==123 && a->es_explicita==true && a->tempo==123.5,"No parseó comillas/números.");
-    const auto b=lector.leerSiguiente(); comprobar(b && b->name=="Nombre\ncon línea" && !b->streams,"No conservó salto o campo vacío.");
+    const auto b=lector.leerSiguiente(); comprobar(b && b->name=="Nombre\ncon línea" && !b->streams && !b->popularity,"No conservó salto o campo vacío.");
     comprobar(!lector.leerSiguiente(),"EOF debe devolver nullopt."); lector.cerrar();
-    const auto malo=dir/"malo.csv"; {ofstream f(malo); f<<encabezado()<<"a,b,c,d,1.2,,,,,,,,,,,\n";}
-    LectorCSV lectorMalo(malo.string()); comprobar(lectorMalo.abrir(),"No abrió CSV inválido."); bool error=false; try{(void)lectorMalo.leerSiguiente();}catch(const runtime_error& e){error=string(e.what()).find("registro CSV")!=string::npos;} comprobar(error,"Debe señalar registro inválido.");
+    const auto malo=dir/"malo.csv";
+    for (const string campo : {"1.2", " "}) {
+        { ofstream f(malo); f << encabezado() << "a,b,c,d," << campo << ",,,id,,,,,,,,\n"; }
+        LectorCSV lectorMalo(malo.string());
+        comprobar(lectorMalo.abrir(),"No abrió CSV inválido.");
+        bool error=false;
+        try { (void)lectorMalo.leerSiguiente(); }
+        catch(const runtime_error& e) {
+            const string mensaje = e.what();
+            error = mensaje.find("registro CSV 2") != string::npos
+                    && mensaje.find("duration_ms") != string::npos;
+        }
+        comprobar(error,"Debe señalar el campo numérico inválido.");
+    }
 }
 void probarPaginaYArchivo(const filesystem::path& dir){
     Cancion c; c.name="Tema"; c.track_artists="Artista"; c.album_name="Álbum"; c.album_release_date="2024"; c.duration_ms=123; c.genres="pop"; c.es_explicita=false; c.track_id="id-1"; c.track_track_number=1; c.album_total_tracks=10; c.streams=999; c.artist_followers=45; c.artist_popularity=80; c.track_album_album="Álbum"; c.popularity=90; c.tempo=123.5;
     Pagina pagina(0,512); comprobar(pagina.agregarCancion(c),"No agregó canción.");
     const auto canciones=pagina.leerCanciones(); comprobar(canciones.size()==1 && canciones[0].track_id==c.track_id && canciones[0].tempo==c.tempo && canciones[0].es_explicita==c.es_explicita,"Falló round-trip de página.");
     Cancion grande; grande.track_id="no-cabe"; grande.name=string(1000,'x'); comprobar(!pagina.agregarCancion(grande) && pagina.leerCanciones().size()==1,"Página debe rechazar sin modificar cuando no cabe.");
-    const auto ruta=dir/"datos.bin"; Almacenamiento db(ruta.string(),512); comprobar(db.crear(),"No creó binario."); comprobar(!db.crear(),"crear no debe sobrescribir existente."); db.escribirPagina(pagina); comprobar(db.cantidadPaginas()==1,"Cantidad de páginas incorrecta."); db.cerrar();
+    const auto ruta=dir/"datos.bin";
+    Almacenamiento db(ruta.string(),512);
+    comprobar(db.crear(),"No creó binario.");
+    db.escribirPagina(pagina);
+    comprobar(db.cantidadPaginas()==1,"Cantidad de páginas incorrecta.");
+    db.cerrar();
+    comprobar(!db.crear() && !db.estaAbierto(),"crear no debe sobrescribir un archivo existente.");
     Almacenamiento reabierto(ruta.string(),512); comprobar(reabierto.abrir(),"No reabrió binario."); const auto recuperada=reabierto.leerPagina(0).leerCanciones(); comprobar(recuperada.size()==1 && recuperada[0].track_id=="id-1","Falló lectura del binario."); reabierto.cerrar();
     Almacenamiento incompatible(ruta.string(),256); bool error=false; try{(void)incompatible.abrir();}catch(const runtime_error&){error=true;} comprobar(error,"Debe rechazar tamaño incompatible.");
 }

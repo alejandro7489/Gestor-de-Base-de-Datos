@@ -25,9 +25,10 @@ public:
     bool abrirAlmacenamiento();
     EstadisticasBuffer estadisticasBuffer() const;
 
-    // Todas las operaciones siguientes estan pendientes en la version 0.1.
     void importarCSV();
     optional<Cancion> buscarPorId(const string& trackId);
+
+    // Consultas y operaciones pendientes.
     vector<Cancion> buscarPorArtista(const string& artista);
     vector<Cancion> buscarPorAlbum(const string& album);
     vector<Cancion> filtrarPorAnio(int anio);
