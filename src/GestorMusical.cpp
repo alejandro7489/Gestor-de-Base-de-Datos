@@ -60,6 +60,10 @@ EstadisticasBuffer GestorMusical::estadisticasBuffer() const {
     return bufferPool_.estadisticas();
 }
 
+vector<Frame> GestorMusical::estadoFramesBuffer() const {
+    return bufferPool_.estadoFrames();
+}
+
 void GestorMusical::importarCSV() {
     LectorCSV lector(lectorCSV_.ruta());
     if (!lector.abrir()) {

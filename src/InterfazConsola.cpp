@@ -9,6 +9,8 @@
 
 #include "InterfazConsola.h"
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <iostream>
@@ -88,6 +90,49 @@ void imprimirCaja(const vector<string>& lineas, size_t ancho) {
         cout << GRIS << "│ " << RESET << rellenar(lineas[i], ancho) << GRIS << " │" << RESET << "\n";
     }
     cout << GRIS << "└" << repetir("─", static_cast<int>(ancho) + 2) << "┘" << RESET << "\n";
+}
+
+string textoEnUnaLinea(string texto) {
+    for (char& caracter : texto) {
+        if (static_cast<unsigned char>(caracter) < 0x20) caracter = ' ';
+    }
+    return texto;
+}
+
+string acortarTitulo(string titulo, size_t ancho) {
+    titulo = textoEnUnaLinea(titulo);
+    if (longitudVisible(titulo) <= ancho) return titulo;
+    size_t bytes = 0;
+    size_t caracteres = 0;
+    // Cortar antes de un carácter UTF-8 completo.
+    for (; bytes < titulo.size(); ++bytes) {
+        if ((static_cast<unsigned char>(titulo[bytes]) & 0xC0) != 0x80) {
+            if (caracteres == ancho - 1) break;
+            ++caracteres;
+        }
+    }
+    return titulo.substr(0, bytes) + "…";
+}
+
+constexpr int ANCHO_TARJETA = 25;
+using TarjetaFrame = array<string, 4>;
+
+void imprimirTarjetasFrames(const vector<TarjetaFrame>& tarjetas) {
+    const string borde = repetir("─", ANCHO_TARJETA + 2);
+    for (size_t inicio = 0; inicio < tarjetas.size(); inicio += 2) {
+        const size_t fin = min(inicio + 2, tarjetas.size());
+        for (size_t i = inicio; i < fin; ++i) cout << GRIS << "  ┌" << borde << "┐" << RESET;
+        cout << '\n';
+        for (size_t fila = 0; fila < tarjetas[inicio].size(); ++fila) {
+            for (size_t i = inicio; i < fin; ++i) {
+                cout << GRIS << "  │ " << RESET << rellenar(tarjetas[i][fila], ANCHO_TARJETA)
+                     << GRIS << " │" << RESET;
+            }
+            cout << '\n';
+        }
+        for (size_t i = inicio; i < fin; ++i) cout << GRIS << "  └" << borde << "┘" << RESET;
+        cout << '\n';
+    }
 }
 
 void imprimirTabla(const vector<string>& cabecera,
@@ -466,12 +511,44 @@ void InterfazConsola::leerResumenBase() {
 // [5] Monitor del Buffer Pool
 // ---------------------------------------------------------------------------
 void InterfazConsola::pantallaBufferPool() const {
-    mostrarEncabezado("Monitor del Buffer Pool");
-    cout << "  Capacidad: " << CANTIDAD_FRAMES << " frames · Tamaño de página: "
-         << TAMANO_PAGINA_PREDETERMINADO << " bytes\n";
-    if (gestor_) {
-        const auto stats = gestor_->estadisticasBuffer();
-        const size_t accesos = stats.hits + stats.misses;
+    if (!gestor_) {
+        mostrarEncabezado("Monitor del Buffer Pool");
+        cout << "  Importa el CSV desde Operaciones [4].\n";
+        pausar();
+        return;
+    }
+
+    const auto frames = gestor_->estadoFramesBuffer();
+    const auto stats = gestor_->estadisticasBuffer();
+    const size_t accesos = stats.hits + stats.misses;
+    vector<TarjetaFrame> tarjetas;
+    vector<optional<vector<Cancion>>> tracks(frames.size());
+    size_t ocupados = 0;
+    for (size_t i = 0; i < frames.size(); ++i) {
+        const Frame& frame = frames[i];
+        TarjetaFrame tarjeta{NEGRITA + "[" + to_string(i + 1) + "] Frame " + to_string(i) + RESET,
+                             GRIS + "Libre" + RESET, "", ""};
+        if (frame.ocupado) {
+            ++ocupados;
+            tarjeta[1] = VERDE + "Página " + to_string(frame.pagina.id) + RESET;
+            tarjeta[2] = "Pines: " + to_string(frame.pinCount);
+            try {
+                tracks[i] = frame.pagina.leerCanciones();
+                tarjeta[1] += " · " + to_string(tracks[i]->size()) + " tracks";
+                if (!tracks[i]->empty()) {
+                    tarjeta[3] = acortarTitulo(tracks[i]->front().name, ANCHO_TARJETA);
+                }
+            } catch (const runtime_error&) {
+                tarjeta[3] = AMARILLO + "Error al leer los tracks" + RESET;
+            }
+        }
+        tarjetas.push_back(tarjeta);
+    }
+
+    while (true) {
+        mostrarEncabezado("Monitor del Buffer Pool");
+        cout << "  Frames ocupados: " << ocupados << " / " << frames.size()
+             << " · Página: " << TAMANO_PAGINA_PREDETERMINADO << " bytes\n";
         cout << "  HIT: " << stats.hits << " · MISS: " << stats.misses
              << " · Lecturas de página: " << stats.lecturasDisco << '\n';
         if (accesos > 0) {
@@ -480,10 +557,35 @@ void InterfazConsola::pantallaBufferPool() const {
             snprintf(tasaTexto, sizeof(tasaTexto), "%.1f", tasa);
             cout << "  Tasa de aciertos: " << barra(tasa, 20) << " " << tasaTexto << " %\n";
         }
-    } else {
-        cout << "  Importa el CSV desde Operaciones [4].\n";
+        cout << '\n';
+        imprimirTarjetasFrames(tarjetas);
+        cout << "\n  Elige un frame para ver sus tracks. [0] Volver\n";
+        const string opcion = leerOpcion("buffer");
+        if (opcion.empty() || opcion == "0") return;
+
+        size_t indice = 0;
+        while (indice < frames.size() && opcion != to_string(indice + 1)) ++indice;
+        if (indice == frames.size()) {
+            mostrarOpcionInvalida();
+            continue;
+        }
+
+        const Frame& frame = frames[indice];
+        mostrarEncabezado("Frame " + to_string(indice));
+        if (!frame.ocupado) {
+            cout << "  Frame libre.\n";
+        } else if (!tracks[indice]) {
+            cout << "  No se pudieron leer los tracks de la página " << frame.pagina.id << ".\n";
+        } else {
+            cout << "  Página " << frame.pagina.id << " · " << tracks[indice]->size() << " tracks\n\n";
+            for (const Cancion& cancion : *tracks[indice]) {
+                cout << "  " << NEGRITA << textoEnUnaLinea(cancion.name) << RESET << " · "
+                     << textoEnUnaLinea(cancion.track_artists) << "\n  ID: "
+                     << textoEnUnaLinea(cancion.track_id) << "\n\n";
+            }
+        }
+        pausar();
     }
-    pausar();
 }
 
 // ---------------------------------------------------------------------------

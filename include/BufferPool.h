@@ -26,6 +26,8 @@ public:
     EstadisticasBuffer estadisticas() const;
 
     size_t framesOcupados() const;
+    // Copia de los frames para inspección, sin solicitar páginas al buffer.
+    vector<Frame> estadoFrames() const;
 
     bool estaResidente(IdPagina id) const;
 

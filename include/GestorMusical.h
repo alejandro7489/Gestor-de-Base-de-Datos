@@ -24,6 +24,7 @@ public:
     bool abrirCSV();
     bool abrirAlmacenamiento();
     EstadisticasBuffer estadisticasBuffer() const;
+    vector<Frame> estadoFramesBuffer() const;
 
     void importarCSV();
     optional<Cancion> buscarPorId(const string& trackId);

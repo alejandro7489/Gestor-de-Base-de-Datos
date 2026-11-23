@@ -39,6 +39,10 @@ size_t BufferPool::framesOcupados() const {
     return cantidad;
 }
 
+vector<Frame> BufferPool::estadoFrames() const {
+    return frames_;
+}
+
 bool BufferPool::estaResidente(IdPagina id) const {
     return buscarFrame(id).has_value();
 }

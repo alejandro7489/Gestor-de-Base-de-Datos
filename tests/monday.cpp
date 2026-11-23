@@ -243,10 +243,20 @@ void probarIntegracion(const string& rutaCSV) {
     GestorMusical gestor((archivos.carpeta / "sin.csv").string(), rutaBinario,
                          cantidadFrames, tamanoPagina);
     comprobar(gestor.abrirAlmacenamiento(), "No se pudo reabrir el binario importado.");
+    const auto framesFrios = gestor.estadoFramesBuffer();
+    comprobar(framesFrios.size() == 2 && !framesFrios[0].ocupado && !framesFrios[1].ocupado,
+              "El monitor debe distinguir los dos frames libres al reabrir.");
     comprobarEstadisticas(gestor.estadisticasBuffer(), 0, 0, 0, "reconstrucción del índice");
 
     comprobarCancion(gestor.buscarPorId(esperada->track_id), *esperada);
     comprobarEstadisticas(gestor.estadisticasBuffer(), 0, 1, 1, "primera consulta");
+    const auto frames = gestor.estadoFramesBuffer();
+    comprobar(frames[0].ocupado && frames[0].pagina.id == 0 && frames[0].pinCount == 0
+              && !frames[1].ocupado, "El monitor debe mostrar la página y los pines reales.");
+    const auto residentes = frames[0].pagina.leerCanciones();
+    comprobar(!residentes.empty() && campos(residentes.front()) == campos(*esperada),
+              "El monitor debe mostrar los tracks de la página residente.");
+    comprobarEstadisticas(gestor.estadisticasBuffer(), 0, 1, 1, "inspección de tracks residentes");
     comprobarCancion(gestor.buscarPorId(esperada->track_id), *esperada);
     comprobarEstadisticas(gestor.estadisticasBuffer(), 1, 1, 1, "consulta repetida");
     comprobar(!gestor.buscarPorId("#id-inexistente-prueba-monday#"), "Se encontró el ID inexistente.");
