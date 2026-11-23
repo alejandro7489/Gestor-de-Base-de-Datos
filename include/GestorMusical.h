@@ -27,10 +27,11 @@ public:
 
     void importarCSV();
     optional<Cancion> buscarPorId(const string& trackId);
-
-    // Consultas y operaciones pendientes.
+    vector<Cancion> buscarPorNombre(const string& nombre);
     vector<Cancion> buscarPorArtista(const string& artista);
     vector<Cancion> buscarPorAlbum(const string& album);
+
+    // Consultas y operaciones pendientes.
     vector<Cancion> filtrarPorAnio(int anio);
     vector<Cancion> filtrarPorGenero(const string& genero);
     vector<Cancion> rankingPopularidad(size_t limite);
@@ -39,6 +40,9 @@ public:
     bool eliminar(const string& trackId);
 
 private:
+    enum class CampoBusqueda { Nombre, Artista, Album };
+    vector<Cancion> buscarPorTexto(const string& texto, CampoBusqueda campo);
+
     LectorCSV lectorCSV_;
     Almacenamiento almacenamiento_;
     TablaHash indiceCanciones_;

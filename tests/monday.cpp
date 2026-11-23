@@ -149,8 +149,8 @@ void escribirCSVDePrueba(const string& ruta, const string& ultimoRegistro) {
     for (size_t i = 1; i < columnas.size(); ++i) {
         csv << ',' << columnas[i];
     }
-    csv << '\n' << string(150, 'a') << ",,,,,,,id-primero,,,,,,,,\n"
-        << string(150, 'b') << ",,,,,,,id-segundo,,,,,,,,\n"
+    csv << "\nTema Único " << string(150, 'a') << ",Ártista Norte,Disco Azul,,,,,id-primero,,,,,,,,\n"
+        << "Otro Tema " << string(150, 'b') << ",Ártista Norte,Disco Verde,,,,,id-segundo,,,,,,,,\n"
         << ultimoRegistro;
     csv.close();
     comprobar(static_cast<bool>(csv), "No se pudo escribir el CSV auxiliar.");
@@ -176,7 +176,8 @@ void probarDuplicadosYError(const ArchivosDePrueba& archivos) {
     escribirCSVDePrueba(rutaCSV, "Duplicado,,,,,,,id-primero,,,,,,,,\n");
     importador.importarCSV();
     const auto primera = importador.buscarPorId("id-primero");
-    comprobar(primera && primera->name == string(150, 'a'), "Se perdió la primera aparición.");
+    comprobar(primera && primera->name == "Tema Único " + string(150, 'a'),
+              "Se perdió la primera aparición.");
     bool existe = false;
     try {
         importador.importarCSV();
@@ -199,8 +200,21 @@ void probarDuplicadosYError(const ArchivosDePrueba& archivos) {
 
     comprobar(importador.abrirAlmacenamiento(), "No se pudo reabrir el binario.");
     comprobarEstadisticas(importador.estadisticasBuffer(), 0, 0, 0, "reapertura del mismo gestor");
+    const auto porNombre = importador.buscarPorNombre("tema único");
+    const auto porArtista = importador.buscarPorArtista("ÁRTISTA");
+    const auto porAlbum = importador.buscarPorAlbum("verde");
+    comprobar(porNombre.size() == 1 && porNombre[0].track_id == "id-primero",
+              "La búsqueda parcial por nombre falló.");
+    comprobar(porArtista.size() == 2 && porArtista[0].track_id == "id-primero"
+              && porArtista[1].track_id == "id-segundo", "La búsqueda por artista falló.");
+    comprobar(porAlbum.size() == 1 && porAlbum[0].track_id == "id-segundo",
+              "La búsqueda por álbum falló.");
+    comprobar(importador.buscarPorNombre("").empty() && importador.buscarPorAlbum("no-existe").empty(),
+              "La búsqueda vacía o ausente debe devolver cero coincidencias.");
+    comprobarEstadisticas(importador.estadisticasBuffer(), 0, 0, 0, "búsquedas por texto");
     comprobarCancion(importador.buscarPorId("id-primero"), *primera);
     comprobarEstadisticas(importador.estadisticasBuffer(), 0, 1, 1, "consulta tras reabrir");
+    cout << "Búsquedas parciales por nombre, artista y álbum verificadas.\n";
     cout << "Duplicados, protección del binario y reintento tras un registro demasiado grande: correctos.\n";
 }
 

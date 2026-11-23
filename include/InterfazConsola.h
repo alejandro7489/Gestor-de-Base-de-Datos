@@ -27,6 +27,8 @@ private:
 
     // --- Pantallas (una por opción del menú) ---
     void pantallaBuscarMusica();
+    void buscarIdEnConsola();
+    void buscarTextoEnConsola(const std::string& opcion);
     void pantallaTop() const;
     void pantallaExplorar() const;
     void pantallaOperaciones();

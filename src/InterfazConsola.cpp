@@ -249,53 +249,95 @@ void InterfazConsola::pantallaBuscarMusica() {
     while (true) {
         mostrarEncabezado("Buscar música");
         cout << "  " << VERDE << "[1]" << RESET << "  Por ID de canción (track_id)\n"
-             << "  " << VERDE << "[2]" << RESET << "  Por artista\n"
-             << "  " << VERDE << "[3]" << RESET << "  Por álbum\n"
-             << "  " << VERDE << "[4]" << RESET << "  Filtrar por año o género\n\n"
+             << "  " << VERDE << "[2]" << RESET << "  Por nombre de canción\n"
+             << "  " << VERDE << "[3]" << RESET << "  Por artista\n"
+             << "  " << VERDE << "[4]" << RESET << "  Por álbum\n"
+             << "  " << VERDE << "[5]" << RESET << "  Filtrar por año o género\n\n"
              << "  " << VERDE << "[0]" << RESET << "  Volver\n\n";
 
         const string opcion = leerOpcion("buscar");
         if (opcion == "0") return;
-        if (opcion == "2" || opcion == "3" || opcion == "4") {
-            mostrarPendiente("búsquedas por artista y álbum, y filtros.");
-        } else if (opcion != "1") {
+        if (opcion.size() != 1 || opcion[0] < '1' || opcion[0] > '5') {
             mostrarOpcionInvalida();
             continue;
+        }
+        if (opcion == "5") {
+            mostrarPendiente("filtros por año y género.");
         } else if (!gestor_) {
             cout << "\n  Importa el CSV desde Operaciones [4].\n";
         } else {
-            if (primerId_) {
-                cout << "\n  ID para probar: " << *primerId_ << " (presiona Enter para usarlo)\n";
-            }
-            string id = recortar(leerLinea("  track_id: "));
-            if (!cin) return;
-            if (id.empty() && primerId_) id = *primerId_;
-            if (id.empty()) {
-                cout << "\n  Escribe un track_id para buscar.\n";
-            } else {
-                try {
-                    const auto antes = gestor_->estadisticasBuffer();
-                    const auto cancion = gestor_->buscarPorId(id);
-                    const auto despues = gestor_->estadisticasBuffer();
-                    ++consultas_;
-                    if (cancion) {
-                        cout << "\n  " << NEGRITA << cancion->name << RESET << '\n'
-                             << "  Artista: " << cancion->track_artists << '\n'
-                             << "  Álbum:   " << cancion->album_name << '\n'
-                             << "  ID:      " << cancion->track_id << '\n'
-                             << "  Buffer:  " << (despues.hits > antes.hits ? "HIT" : "MISS")
-                             << " · Lecturas de página: "
-                             << despues.lecturasDisco - antes.lecturasDisco << '\n';
-                    } else {
-                        ++idsAusentes_;
-                        cout << "\n  ID inexistente. El Buffer Pool conserva sus contadores.\n";
-                    }
-                } catch (const exception& error) {
-                    cout << "\n  Error en la consulta: " << error.what() << '\n';
+            try {
+                if (opcion == "1") {
+                    buscarIdEnConsola();
+                } else {
+                    buscarTextoEnConsola(opcion);
                 }
+            } catch (const exception& error) {
+                cout << "\n  Error en la consulta: " << error.what() << '\n';
             }
         }
         pausar();
+    }
+}
+
+void InterfazConsola::buscarIdEnConsola() {
+    if (primerId_) {
+        cout << "\n  ID para probar: " << *primerId_ << " (presiona Enter para usarlo)\n";
+    }
+    string id = recortar(leerLinea("  track_id: "));
+    if (!cin) return;
+    if (id.empty() && primerId_) id = *primerId_;
+    if (id.empty()) {
+        cout << "\n  Escribe un track_id para buscar.\n";
+        return;
+    }
+
+    const auto antes = gestor_->estadisticasBuffer();
+    const auto cancion = gestor_->buscarPorId(id);
+    const auto despues = gestor_->estadisticasBuffer();
+    ++consultas_;
+    if (!cancion) {
+        ++idsAusentes_;
+        cout << "\n  ID inexistente. El Buffer Pool conserva sus contadores.\n";
+        return;
+    }
+
+    cout << "\n  " << NEGRITA << cancion->name << RESET << '\n'
+         << "  Artista: " << cancion->track_artists << '\n'
+         << "  Álbum:   " << cancion->album_name << '\n'
+         << "  ID:      " << cancion->track_id << '\n'
+         << "  Buffer:  " << (despues.hits > antes.hits ? "HIT" : "MISS")
+         << " · Lecturas de página: "
+         << despues.lecturasDisco - antes.lecturasDisco << '\n';
+}
+
+void InterfazConsola::buscarTextoEnConsola(const string& opcion) {
+    const string campo = opcion == "2" ? "Nombre de la canción"
+                       : opcion == "3" ? "Artista" : "Álbum";
+    const string texto = recortar(leerLinea("\n  " + campo + " (puedes escribir solo una parte): "));
+    if (!cin) return;
+    if (texto.empty()) {
+        cout << "\n  Escribe un texto para buscar.\n";
+        return;
+    }
+
+    vector<Cancion> canciones;
+    if (opcion == "2") {
+        canciones = gestor_->buscarPorNombre(texto);
+    } else if (opcion == "3") {
+        canciones = gestor_->buscarPorArtista(texto);
+    } else {
+        canciones = gestor_->buscarPorAlbum(texto);
+    }
+
+    if (canciones.empty()) {
+        cout << "\n  No se encontraron canciones.\n";
+        return;
+    }
+    cout << "\n  Coincidencias: " << canciones.size() << "\n\n";
+    for (const Cancion& cancion : canciones) {
+        cout << "  " << NEGRITA << cancion.name << RESET << " · " << cancion.track_artists
+             << " · " << cancion.album_name << "\n  ID: " << cancion.track_id << "\n\n";
     }
 }
 
@@ -447,7 +489,7 @@ void InterfazConsola::pantallaEstadisticas() const {
                       {{to_string(consultas_), to_string(idsAusentes_),
                         to_string(gestor_->estadisticasBuffer().lecturasDisco)}});
         cout << "\n  Lecturas = páginas cargadas por el Buffer Pool desde el archivo.\n"
-             << "  La reconstrucción del índice y el resumen se leen por separado.\n";
+             << "  El índice, el resumen y las búsquedas por texto usan lecturas directas.\n";
     } else {
         cout << "  Importa el CSV desde Operaciones [4].\n";
     }

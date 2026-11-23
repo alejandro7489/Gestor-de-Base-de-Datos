@@ -6,6 +6,24 @@
 
 using namespace std;
 
+namespace {
+string aMinusculas(string texto) {
+    for (size_t i = 0; i < texto.size(); ++i) {
+        const auto letra = static_cast<unsigned char>(texto[i]);
+        if (letra >= 'A' && letra <= 'Z') {
+            texto[i] = static_cast<char>(letra + ('a' - 'A'));
+        } else if (letra == 0xC3 && i + 1 < texto.size()) {
+            // En UTF-8, las mayúsculas latinas como Á, É y Ñ empiezan por C3.
+            const auto segundoByte = static_cast<unsigned char>(texto[i + 1]);
+            if (segundoByte >= 0x80 && segundoByte <= 0x9E && segundoByte != 0x97) {
+                texto[i + 1] = static_cast<char>(segundoByte + 0x20);
+            }
+        }
+    }
+    return texto;
+}
+}
+
 GestorMusical::GestorMusical(const string& rutaCSV, const string& rutaBinario,
                            size_t capacidadBuffer, size_t tamanoPagina)
     : lectorCSV_(rutaCSV), almacenamiento_(rutaBinario, tamanoPagina),
@@ -120,12 +138,43 @@ optional<Cancion> GestorMusical::buscarPorId(const string& trackId) {
     return encontrada;
 }
 
-vector<Cancion> GestorMusical::buscarPorArtista(const string&) {
-    throw logic_error("Pendiente: busqueda de canciones por artista.");
+vector<Cancion> GestorMusical::buscarPorNombre(const string& nombre) {
+    return buscarPorTexto(nombre, CampoBusqueda::Nombre);
 }
 
-vector<Cancion> GestorMusical::buscarPorAlbum(const string&) {
-    throw logic_error("Pendiente: consulta de canciones por album.");
+vector<Cancion> GestorMusical::buscarPorArtista(const string& artista) {
+    return buscarPorTexto(artista, CampoBusqueda::Artista);
+}
+
+vector<Cancion> GestorMusical::buscarPorAlbum(const string& album) {
+    return buscarPorTexto(album, CampoBusqueda::Album);
+}
+
+vector<Cancion> GestorMusical::buscarPorTexto(const string& texto, CampoBusqueda campo) {
+    vector<Cancion> resultados;
+    if (texto.empty() || !almacenamiento_.estaAbierto()) {
+        return resultados;
+    }
+
+    // El recorrido secuencial deja el Buffer Pool disponible para la búsqueda por ID.
+    const string criterio = aMinusculas(texto);
+    const size_t paginas = almacenamiento_.cantidadPaginas();
+    for (IdPagina id = 0; id < paginas; ++id) {
+        TablaHash idsEnPagina;
+        for (Cancion& cancion : almacenamiento_.leerPagina(id).leerCanciones()) {
+            if (indiceCanciones_.buscar(cancion.track_id) != id || idsEnPagina.buscar(cancion.track_id)) {
+                continue;
+            }
+            idsEnPagina.insertar(cancion.track_id, id);
+            const string& valor = campo == CampoBusqueda::Nombre ? cancion.name
+                                : campo == CampoBusqueda::Artista ? cancion.track_artists
+                                : cancion.album_name;
+            if (aMinusculas(valor).find(criterio) != string::npos) {
+                resultados.push_back(move(cancion));
+            }
+        }
+    }
+    return resultados;
 }
 
 vector<Cancion> GestorMusical::filtrarPorAnio(int) {
