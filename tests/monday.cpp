@@ -200,21 +200,25 @@ void probarDuplicadosYError(const ArchivosDePrueba& archivos) {
 
     comprobar(importador.abrirAlmacenamiento(), "No se pudo reabrir el binario.");
     comprobarEstadisticas(importador.estadisticasBuffer(), 0, 0, 0, "reapertura del mismo gestor");
+    comprobarCancion(importador.buscarPorId("id-primero"), *primera);
+    comprobarEstadisticas(importador.estadisticasBuffer(), 0, 1, 1, "consulta por ID tras reabrir");
     const auto porNombre = importador.buscarPorNombre("tema único");
+    comprobarEstadisticas(importador.estadisticasBuffer(), 1, 3, 3, "búsqueda por nombre");
     const auto porArtista = importador.buscarPorArtista("ÁRTISTA");
+    comprobarEstadisticas(importador.estadisticasBuffer(), 1, 6, 6, "búsqueda por artista");
     const auto porAlbum = importador.buscarPorAlbum("verde");
+    comprobarEstadisticas(importador.estadisticasBuffer(), 1, 9, 9, "búsqueda por álbum");
     comprobar(porNombre.size() == 1 && porNombre[0].track_id == "id-primero",
               "La búsqueda parcial por nombre falló.");
     comprobar(porArtista.size() == 2 && porArtista[0].track_id == "id-primero"
               && porArtista[1].track_id == "id-segundo", "La búsqueda por artista falló.");
     comprobar(porAlbum.size() == 1 && porAlbum[0].track_id == "id-segundo",
               "La búsqueda por álbum falló.");
-    comprobar(importador.buscarPorNombre("").empty() && importador.buscarPorAlbum("no-existe").empty(),
-              "La búsqueda vacía o ausente debe devolver cero coincidencias.");
-    comprobarEstadisticas(importador.estadisticasBuffer(), 0, 0, 0, "búsquedas por texto");
-    comprobarCancion(importador.buscarPorId("id-primero"), *primera);
-    comprobarEstadisticas(importador.estadisticasBuffer(), 0, 1, 1, "consulta tras reabrir");
-    cout << "Búsquedas parciales por nombre, artista y álbum verificadas.\n";
+    comprobar(importador.buscarPorNombre("").empty(), "El criterio vacío debe devolver cero coincidencias.");
+    comprobarEstadisticas(importador.estadisticasBuffer(), 1, 9, 9, "criterio vacío");
+    comprobar(importador.buscarPorAlbum("no-existe").empty(), "El álbum ausente debe devolver cero coincidencias.");
+    comprobarEstadisticas(importador.estadisticasBuffer(), 1, 12, 12, "búsqueda sin coincidencias");
+    cout << "Búsquedas por nombre, artista y álbum verificadas con el Buffer Pool.\n";
     cout << "Duplicados, protección del binario y reintento tras un registro demasiado grande: correctos.\n";
 }
 

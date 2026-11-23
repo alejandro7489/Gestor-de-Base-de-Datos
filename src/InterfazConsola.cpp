@@ -295,9 +295,9 @@ void InterfazConsola::buscarIdEnConsola() {
     const auto antes = gestor_->estadisticasBuffer();
     const auto cancion = gestor_->buscarPorId(id);
     const auto despues = gestor_->estadisticasBuffer();
-    ++consultas_;
+    ++consultasPorId_;
     if (!cancion) {
-        ++idsAusentes_;
+        ++consultasSinResultado_;
         cout << "\n  ID inexistente. El Buffer Pool conserva sus contadores.\n";
         return;
     }
@@ -321,6 +321,7 @@ void InterfazConsola::buscarTextoEnConsola(const string& opcion) {
         return;
     }
 
+    const auto antes = gestor_->estadisticasBuffer();
     vector<Cancion> canciones;
     if (opcion == "2") {
         canciones = gestor_->buscarPorNombre(texto);
@@ -330,15 +331,21 @@ void InterfazConsola::buscarTextoEnConsola(const string& opcion) {
         canciones = gestor_->buscarPorAlbum(texto);
     }
 
+    const auto despues = gestor_->estadisticasBuffer();
+    ++consultasPorTexto_;
     if (canciones.empty()) {
+        ++consultasSinResultado_;
         cout << "\n  No se encontraron canciones.\n";
-        return;
+    } else {
+        cout << "\n  Coincidencias: " << canciones.size() << "\n\n";
+        for (const Cancion& cancion : canciones) {
+            cout << "  " << NEGRITA << cancion.name << RESET << " · " << cancion.track_artists
+                 << " · " << cancion.album_name << "\n  ID: " << cancion.track_id << "\n\n";
+        }
     }
-    cout << "\n  Coincidencias: " << canciones.size() << "\n\n";
-    for (const Cancion& cancion : canciones) {
-        cout << "  " << NEGRITA << cancion.name << RESET << " · " << cancion.track_artists
-             << " · " << cancion.album_name << "\n  ID: " << cancion.track_id << "\n\n";
-    }
+    cout << "  Buffer de la consulta: " << despues.hits - antes.hits << " HIT · "
+         << despues.misses - antes.misses << " MISS · "
+         << despues.lecturasDisco - antes.lecturasDisco << " lecturas de página\n";
 }
 
 void InterfazConsola::pantallaTop() const {
@@ -407,8 +414,9 @@ bool InterfazConsola::reabrirBase() {
             throw;
         }
     }
-    consultas_ = 0;
-    idsAusentes_ = 0;
+    consultasPorId_ = 0;
+    consultasPorTexto_ = 0;
+    consultasSinResultado_ = 0;
     return true;
 }
 
@@ -484,12 +492,12 @@ void InterfazConsola::pantallaBufferPool() const {
 void InterfazConsola::pantallaEstadisticas() const {
     mostrarEncabezado("Estadísticas de rendimiento");
     if (gestor_) {
-        imprimirTabla({"Consultas por ID", "IDs ausentes", "Lecturas de página"},
-                      {18, 14, 20},
-                      {{to_string(consultas_), to_string(idsAusentes_),
-                        to_string(gestor_->estadisticasBuffer().lecturasDisco)}});
-        cout << "\n  Lecturas = páginas cargadas por el Buffer Pool desde el archivo.\n"
-             << "  El índice, el resumen y las búsquedas por texto usan lecturas directas.\n";
+        imprimirTabla({"Consultas por ID", "Consultas por texto", "Sin resultado"},
+                      {18, 21, 15},
+                      {{to_string(consultasPorId_), to_string(consultasPorTexto_),
+                        to_string(consultasSinResultado_)}});
+        cout << "\n  El monitor del Buffer Pool [5] acumula las lecturas de todas las búsquedas.\n"
+             << "  La reconstrucción del índice y el resumen usan lecturas directas.\n";
     } else {
         cout << "  Importa el CSV desde Operaciones [4].\n";
     }

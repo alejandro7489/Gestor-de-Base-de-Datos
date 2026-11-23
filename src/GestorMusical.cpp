@@ -118,24 +118,25 @@ optional<Cancion> GestorMusical::buscarPorId(const string& trackId) {
         return nullopt;
     }
 
-    const Pagina& pagina = bufferPool_.obtenerPagina(*id, almacenamiento_);
-    optional<Cancion> encontrada;
-    try {
-        for (Cancion& cancion : pagina.leerCanciones()) {
-            if (cancion.track_id == trackId) {
-                encontrada = move(cancion);
-                break;
-            }
+    for (Cancion& cancion : leerCancionesConBuffer(*id)) {
+        if (cancion.track_id == trackId) {
+            return move(cancion);
         }
+    }
+    throw runtime_error("El indice apunta a una pagina sin el track_id " + trackId);
+}
+
+vector<Cancion> GestorMusical::leerCancionesConBuffer(IdPagina id) {
+    const Pagina& pagina = bufferPool_.obtenerPagina(id, almacenamiento_);
+    vector<Cancion> canciones;
+    try {
+        canciones = pagina.leerCanciones();
     } catch (...) {
-        bufferPool_.liberarPagina(*id);
+        bufferPool_.liberarPagina(id);
         throw;
     }
-    bufferPool_.liberarPagina(*id);
-    if (!encontrada) {
-        throw runtime_error("El indice apunta a una pagina sin el track_id " + trackId);
-    }
-    return encontrada;
+    bufferPool_.liberarPagina(id);
+    return canciones;
 }
 
 vector<Cancion> GestorMusical::buscarPorNombre(const string& nombre) {
@@ -156,12 +157,11 @@ vector<Cancion> GestorMusical::buscarPorTexto(const string& texto, CampoBusqueda
         return resultados;
     }
 
-    // El recorrido secuencial deja el Buffer Pool disponible para la búsqueda por ID.
     const string criterio = aMinusculas(texto);
     const size_t paginas = almacenamiento_.cantidadPaginas();
     for (IdPagina id = 0; id < paginas; ++id) {
         TablaHash idsEnPagina;
-        for (Cancion& cancion : almacenamiento_.leerPagina(id).leerCanciones()) {
+        for (Cancion& cancion : leerCancionesConBuffer(id)) {
             if (indiceCanciones_.buscar(cancion.track_id) != id || idsEnPagina.buscar(cancion.track_id)) {
                 continue;
             }

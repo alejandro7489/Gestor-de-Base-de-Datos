@@ -42,6 +42,7 @@ public:
 private:
     enum class CampoBusqueda { Nombre, Artista, Album };
     vector<Cancion> buscarPorTexto(const string& texto, CampoBusqueda campo);
+    vector<Cancion> leerCancionesConBuffer(IdPagina id);
 
     LectorCSV lectorCSV_;
     Almacenamiento almacenamiento_;

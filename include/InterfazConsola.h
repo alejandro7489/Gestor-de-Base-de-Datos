@@ -43,8 +43,9 @@ private:
     std::size_t canciones_ = 0;
     std::size_t paginas_ = 0;
     std::optional<std::string> primerId_;
-    std::size_t consultas_ = 0;
-    std::size_t idsAusentes_ = 0;
+    std::size_t consultasPorId_ = 0;
+    std::size_t consultasPorTexto_ = 0;
+    std::size_t consultasSinResultado_ = 0;
 };
 
 #endif // INTERFAZ_CONSOLA_H

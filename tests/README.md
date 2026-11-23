@@ -63,8 +63,9 @@ con otro gestor cuya ruta CSV no existe. Verifica la cantidad de registros y
 compara los 16 campos de cada canción, incluidos los opcionales, tanto en las
 páginas como en las consultas por Hash. También prueba IDs duplicados, el
 rechazo de registros demasiado grandes y que una importación nueva preserve
-un binario existente. Se verifican las búsquedas parciales por nombre, artista
-y álbum y que sus lecturas directas dejen intactos los contadores del buffer.
+un binario existente. Se verifica que las búsquedas parciales por nombre,
+artista y álbum recorran todas las páginas mediante el Buffer Pool, incluso
+si el texto no tiene coincidencias.
 
 ```powershell
 New-Item -ItemType Directory -Force build | Out-Null
